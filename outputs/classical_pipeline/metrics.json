@@ -1,0 +1,56 @@
+{
+  "svm": {
+    "model": "svm",
+    "n_test": 1310,
+    "accuracy": 0.8634,
+    "precision": 0.9386,
+    "recall": 0.8449,
+    "f1": 0.8893,
+    "confusion_matrix": [
+      [
+        412,
+        47
+      ],
+      [
+        132,
+        719
+      ]
+    ]
+  },
+  "random_forest": {
+    "model": "random_forest",
+    "n_test": 1310,
+    "accuracy": 0.8366,
+    "precision": 0.9142,
+    "recall": 0.8261,
+    "f1": 0.8679,
+    "confusion_matrix": [
+      [
+        393,
+        66
+      ],
+      [
+        148,
+        703
+      ]
+    ]
+  },
+  "knn": {
+    "model": "knn",
+    "n_test": 1310,
+    "accuracy": 0.7794,
+    "precision": 0.8707,
+    "recall": 0.7756,
+    "f1": 0.8204,
+    "confusion_matrix": [
+      [
+        361,
+        98
+      ],
+      [
+        191,
+        660
+      ]
+    ]
+  }
+}
