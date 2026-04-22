@@ -65,3 +65,38 @@ def test_frame_dataset_yields_tensor_and_label(fake_dataset):
     assert sample["image"].shape == (3, 224, 224)
     assert sample["image"].dtype == torch.float32
     assert sample["label"] in (0, 1)
+
+
+from src.dl_pipeline.dataset import build_windows, WindowDataset
+
+
+def test_build_windows_emits_correct_shape(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"])
+    windows = build_windows(df, window=3, stride=1)
+    assert all(len(w["frame_indices"]) == 3 for w in windows)
+    for w in windows:
+        last_label = df.iloc[w["frame_indices"][-1]]["label"]
+        assert w["label"] == last_label
+
+
+def test_build_windows_does_not_cross_videos(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"]).sort_values(
+        ["video", "frame_path"]
+    ).reset_index(drop=True)
+    windows = build_windows(df, window=3, stride=1)
+    for w in windows:
+        videos = df.iloc[w["frame_indices"]]["video"].unique()
+        assert len(videos) == 1, "Window must not span multiple videos"
+
+
+def test_window_dataset_returns_feature_sequence_when_features_provided(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"]).sort_values(
+        ["video", "frame_path"]
+    ).reset_index(drop=True)
+    fake_features = np.random.default_rng(0).standard_normal((len(df), 576)).astype(np.float32)
+    windows = build_windows(df, window=3, stride=1)
+    ds = WindowDataset(df, windows, features=fake_features)
+    sample = ds[0]
+    assert sample["features"].shape == (3, 576)
+    assert sample["features"].dtype == torch.float32
+    assert sample["label"] in (0, 1)

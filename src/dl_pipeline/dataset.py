@@ -149,3 +149,60 @@ class FrameDataset(Dataset):
         crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
         image = self.transform(crop_rgb)
         return {"image": image, "label": int(row["label"])}
+
+
+def build_windows(
+    df: pd.DataFrame,
+    window: int = config.WINDOW_SIZE,
+    stride: int = config.WINDOW_STRIDE_TRAIN,
+) -> list[dict]:
+    """Generate sliding windows of `window` consecutive frames, per video.
+
+    Caller should pre-sort by (video, frame_path) for strict temporal order.
+    Each window: {"frame_indices": [int, ...], "label": int (last frame), "video": str}
+    """
+    out = []
+    for video, sub in df.groupby("video", sort=False):
+        idx = sub.index.to_numpy()
+        if len(idx) < window:
+            continue
+        for start in range(0, len(idx) - window + 1, stride):
+            win_idx = idx[start:start + window].tolist()
+            label = int(df.iloc[win_idx[-1]]["label"])
+            out.append({"frame_indices": win_idx, "label": label, "video": video})
+    return out
+
+
+class WindowDataset(Dataset):
+    """Window dataset: serves either pre-extracted features or raw face crops.
+
+    If `features` is given (N, F) it's used directly (fast path for LSTM training
+    after the CNN has been frozen and cached). Otherwise crops are loaded on the fly.
+    """
+
+    def __init__(self, df, windows, features=None, train: bool = False):
+        self.df = df.reset_index(drop=True)
+        self.windows = windows
+        self.features = features
+        self.transform = _build_transform(train)
+
+    def __len__(self) -> int:
+        return len(self.windows)
+
+    def __getitem__(self, idx: int) -> dict:
+        w = self.windows[idx]
+        if self.features is not None:
+            seq = self.features[w["frame_indices"]]
+            return {
+                "features": torch.from_numpy(seq).float(),
+                "label": w["label"],
+            }
+        imgs = []
+        for fi in w["frame_indices"]:
+            row = self.df.iloc[fi]
+            frame_bgr = cv2.imread(str(row["frame_path"]))
+            landmarks = np.load(str(row["landmarks_path"]))
+            crop_bgr = face_crop_from_landmarks(frame_bgr, landmarks)
+            crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+            imgs.append(self.transform(crop_rgb))
+        return {"images": torch.stack(imgs), "label": w["label"]}
