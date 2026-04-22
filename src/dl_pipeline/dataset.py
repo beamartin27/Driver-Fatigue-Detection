@@ -75,3 +75,77 @@ def split_indices(
     gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
     train_idx, test_idx = next(gss.split(np.zeros(len(df)), df["label"].values, df["video"].values))
     return train_idx, test_idx
+
+
+import torch
+from torch.utils.data import Dataset
+from torchvision import transforms
+
+
+def face_crop_from_landmarks(
+    frame_bgr: np.ndarray,
+    landmarks_px: np.ndarray,
+    out_size: int = config.INPUT_SIZE,
+    pad_ratio: float = config.FACE_PAD_RATIO,
+) -> np.ndarray:
+    """Crop a padded face ROI from frame_bgr using landmarks_px[:468]."""
+    h, w = frame_bgr.shape[:2]
+    face_pts = landmarks_px[:468]
+    x_min, y_min = face_pts.min(axis=0)
+    x_max, y_max = face_pts.max(axis=0)
+    bbox_w = max(1, int(x_max - x_min))
+    bbox_h = max(1, int(y_max - y_min))
+    pad_x = max(1, int(bbox_w * pad_ratio))
+    pad_y = max(1, int(bbox_h * pad_ratio))
+    x1 = max(0, int(x_min) - pad_x)
+    y1 = max(0, int(y_min) - pad_y)
+    x2 = min(w, int(x_max) + pad_x)
+    y2 = min(h, int(y_max) + pad_y)
+    if x2 <= x1 or y2 <= y1:
+        return np.zeros((out_size, out_size, 3), dtype=np.uint8)
+    roi = frame_bgr[y1:y2, x1:x2]
+    return cv2.resize(roi, (out_size, out_size))
+
+
+_IMAGENET_MEAN = [0.485, 0.456, 0.406]
+_IMAGENET_STD  = [0.229, 0.224, 0.225]
+
+
+def _build_transform(train: bool):
+    if train:
+        return transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2),
+            transforms.RandomRotation(degrees=10),
+            transforms.ToTensor(),
+            transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
+            transforms.RandomErasing(p=0.25, scale=(0.02, 0.1)),
+        ])
+    return transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.ToTensor(),
+        transforms.Normalize(_IMAGENET_MEAN, _IMAGENET_STD),
+    ])
+
+
+class FrameDataset(Dataset):
+    """Per-frame dataset: loads frame, crops face, returns (image, label)."""
+
+    def __init__(self, df: pd.DataFrame, train: bool = False):
+        self.df = df.reset_index(drop=True)
+        self.transform = _build_transform(train)
+
+    def __len__(self) -> int:
+        return len(self.df)
+
+    def __getitem__(self, idx: int) -> dict:
+        row = self.df.iloc[idx]
+        frame_bgr = cv2.imread(str(row["frame_path"]))
+        if frame_bgr is None:
+            raise FileNotFoundError(row["frame_path"])
+        landmarks = np.load(str(row["landmarks_path"]))
+        crop_bgr = face_crop_from_landmarks(frame_bgr, landmarks)
+        crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+        image = self.transform(crop_rgb)
+        return {"image": image, "label": int(row["label"])}
