@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# DL pipeline runtime artifacts (large checkpoints, cached features, per-run logs)
+outputs/dl_pipeline/*.pt
+outputs/dl_pipeline/feature_cache/
+outputs/dl_pipeline/runs/
+
+# OS
+.DS_Store
