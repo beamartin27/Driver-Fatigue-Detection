@@ -161,3 +161,30 @@ def train_cnn(
         log_dir.mkdir(parents=True, exist_ok=True)
         (log_dir / "cnn_metrics.json").write_text(json.dumps(best_metrics, indent=2))
     return best_metrics
+
+
+@torch.no_grad()
+def cache_features(
+    df,
+    extractor: nn.Module,
+    out_dir: Path,
+    device: str = "cpu",
+    batch_size: int = 64,
+) -> np.ndarray:
+    """Extract 576-dim CNN features for every frame in `df`, cached per-video."""
+    from .dataset import FrameDataset
+    extractor.train(False)
+    extractor.to(device)
+    ds = FrameDataset(df, train=False)
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+    feats = []
+    for batch in loader:
+        x = batch["image"].to(device)
+        f = extractor(x).cpu().numpy()
+        feats.append(f)
+    feats_arr = np.concatenate(feats, axis=0).astype(np.float32)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for video, sub in df.groupby("video", sort=False):
+        idx = sub.index.to_numpy()
+        np.save(out_dir / f"{video}.npy", feats_arr[idx])
+    return feats_arr

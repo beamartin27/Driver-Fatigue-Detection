@@ -50,3 +50,18 @@ def test_evaluate_cnn_returns_metrics_dict(fake_dataset):
     for k in ("accuracy", "f1", "auc"):
         assert k in metrics
     assert len(y_true) == len(df)
+
+
+from src.dl_pipeline.train_eval import cache_features
+from src.dl_pipeline.models import build_cnn, CNNFeatureExtractor
+
+
+def test_cache_features_writes_one_array_per_video(fake_dataset, tmp_path):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"]).sort_values(
+        ["video", "frame_path"]
+    ).reset_index(drop=True)
+    extractor = CNNFeatureExtractor(build_cnn(num_classes=2))
+    out_dir = tmp_path / "feature_cache"
+    feats_arr = cache_features(df, extractor, out_dir=out_dir, device="cpu", batch_size=4)
+    assert feats_arr.shape == (len(df), 576)
+    assert len(list(out_dir.glob("*.npy"))) == df["video"].nunique()
