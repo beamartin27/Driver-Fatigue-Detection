@@ -65,3 +65,38 @@ def test_cache_features_writes_one_array_per_video(fake_dataset, tmp_path):
     feats_arr = cache_features(df, extractor, out_dir=out_dir, device="cpu", batch_size=4)
     assert feats_arr.shape == (len(df), 576)
     assert len(list(out_dir.glob("*.npy"))) == df["video"].nunique()
+
+
+from src.dl_pipeline.dataset import build_windows, WindowDataset
+from src.dl_pipeline.train_eval import train_lstm, evaluate_lstm
+from src.dl_pipeline.models import CNNLSTMHead
+
+
+def test_train_lstm_runs_one_step(fake_dataset, tmp_path):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"]).sort_values(
+        ["video", "frame_path"]
+    ).reset_index(drop=True)
+    feats = np.random.default_rng(0).standard_normal((len(df), 576)).astype(np.float32)
+    windows = build_windows(df, window=3, stride=1)
+    train_ds = WindowDataset(df, windows, features=feats)
+    train_loader = DataLoader(train_ds, batch_size=4, shuffle=True)
+    val_loader   = DataLoader(train_ds, batch_size=4)
+    metrics = train_lstm(
+        train_loader, val_loader,
+        epochs=1, in_dim=576, hidden=8, lr=1e-3, device="cpu",
+        out_path=tmp_path / "lstm.pt",
+    )
+    assert "accuracy" in metrics
+
+
+def test_evaluate_lstm_returns_metrics(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"]).sort_values(
+        ["video", "frame_path"]
+    ).reset_index(drop=True)
+    feats = np.random.default_rng(0).standard_normal((len(df), 576)).astype(np.float32)
+    windows = build_windows(df, window=3, stride=1)
+    ds = WindowDataset(df, windows, features=feats)
+    loader = DataLoader(ds, batch_size=4)
+    head = CNNLSTMHead(in_dim=576, hidden=8, num_classes=2)
+    metrics, *_ = evaluate_lstm(head, loader, device="cpu")
+    assert "f1" in metrics

@@ -164,6 +164,76 @@ def train_cnn(
 
 
 @torch.no_grad()
+def evaluate_lstm(head: nn.Module, loader: DataLoader, device: str):
+    head.train(False)
+    head.to(device)
+    ys, preds, probs = [], [], []
+    for batch in loader:
+        x = batch["features"].to(device)
+        y = batch["label"].to(device)
+        logits = head(x)
+        p = torch.softmax(logits, dim=1)[:, 1]
+        preds.append(logits.argmax(dim=1).cpu().numpy())
+        probs.append(p.cpu().numpy())
+        ys.append(y.cpu().numpy())
+    y_true  = np.concatenate(ys)
+    y_pred  = np.concatenate(preds)
+    y_proba = np.concatenate(probs)
+    return compute_metrics(y_true, y_pred, y_proba), y_true, y_pred, y_proba
+
+
+def train_lstm(
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    *,
+    epochs: int = config.LSTM_EPOCHS,
+    in_dim: int = 576,
+    hidden: int = config.LSTM_HIDDEN,
+    lr: float = config.LSTM_LR,
+    class_weights: torch.Tensor | None = None,
+    device: str = "cpu",
+    out_path: Path = config.OUTPUTS_DIR / "cnn_lstm.pt",
+    log_dir: Path | None = None,
+) -> dict:
+    """Train BiLSTM head on cached CNN features. CNN stays frozen."""
+    from .models import CNNLSTMHead
+
+    head = CNNLSTMHead(in_dim=in_dim, hidden=hidden, num_classes=config.NUM_CLASSES).to(device)
+    optim = torch.optim.AdamW(head.parameters(), lr=lr)
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights.to(device) if class_weights is not None else None)
+
+    best_f1, best_metrics = -1.0, {}
+    for epoch in range(epochs):
+        t0 = time.time()
+        head.train(True)
+        total, n = 0.0, 0
+        for batch in train_loader:
+            x = batch["features"].to(device)
+            y = batch["label"].to(device)
+            optim.zero_grad()
+            logits = head(x)
+            loss = loss_fn(logits, y)
+            loss.backward()
+            optim.step()
+            total += float(loss.detach().cpu()) * x.size(0)
+            n += x.size(0)
+        avg_loss = total / max(1, n)
+        val_metrics, *_ = evaluate_lstm(head, val_loader, device)
+        print(f"[LSTM] epoch {epoch+1}/{epochs}  loss={avg_loss:.4f}  "
+              f"val_f1={val_metrics['f1']:.4f}  val_acc={val_metrics['accuracy']:.4f}  "
+              f"({time.time()-t0:.1f}s)")
+        if val_metrics["f1"] > best_f1:
+            best_f1 = val_metrics["f1"]
+            best_metrics = val_metrics
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(head.state_dict(), out_path)
+    if log_dir is not None:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "lstm_metrics.json").write_text(json.dumps(best_metrics, indent=2))
+    return best_metrics
+
+
+@torch.no_grad()
 def cache_features(
     df,
     extractor: nn.Module,
