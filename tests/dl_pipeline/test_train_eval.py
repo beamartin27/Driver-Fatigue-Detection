@@ -21,3 +21,32 @@ def test_compute_metrics_handles_imbalance():
     m = compute_metrics(y_true, y_pred, y_proba)
     assert m["accuracy"] == 5 / 6
     assert m["recall"] == 0.5
+
+
+import torch
+from torch.utils.data import DataLoader
+from src.dl_pipeline.dataset import build_index, FrameDataset
+from src.dl_pipeline.models import build_cnn
+from src.dl_pipeline.train_eval import train_one_epoch, evaluate_cnn
+
+
+def test_train_one_epoch_runs_and_returns_finite_loss(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"])
+    ds = FrameDataset(df, train=True)
+    loader = DataLoader(ds, batch_size=4, shuffle=True)
+    model = build_cnn(num_classes=2)
+    optim = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    avg_loss = train_one_epoch(model, loader, optim, loss_fn, device="cpu")
+    assert np.isfinite(avg_loss)
+
+
+def test_evaluate_cnn_returns_metrics_dict(fake_dataset):
+    df = build_index(fake_dataset["frames_root"], fake_dataset["lm_root"])
+    ds = FrameDataset(df, train=False)
+    loader = DataLoader(ds, batch_size=4)
+    model = build_cnn(num_classes=2)
+    metrics, y_true, y_pred, y_proba = evaluate_cnn(model, loader, device="cpu")
+    for k in ("accuracy", "f1", "auc"):
+        assert k in metrics
+    assert len(y_true) == len(df)
