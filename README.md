@@ -110,3 +110,59 @@ features.npz                 — cached feature matrix (if --save-features used)
 | SVM (RBF)     | 0.8634   | 0.9386    | 0.8449 | 0.8893|
 | Random Forest | 0.8366   | 0.9142    | 0.8261 | 0.8679|
 | k-NN (k=7)    | 0.7794   | 0.8707    | 0.7756 | 0.8204|
+
+---
+
+## Member 4 — Deep Learning (CNN + CNN-LSTM)
+
+Fine-tuned MobileNetV3-Small plus an optional CNN–LSTM stack. Training entry points live in [`docs/superpowers/HANDOFF.md`](docs/superpowers/HANDOFF.md).
+
+Inference for Member 5 consumes `src.dl_pipeline.predict.DLPredictor` (`predict_frame`, optional `predict_window`).
+
+---
+
+## Member 5 — Integration, Fusion & Real-Time Overlay
+
+End-to-end stack: **capture → gesture gate → face landmarks → classical ∥ deep → fusion → alert HUD.**
+
+### Prerequisites
+
+```bash
+pip install -r src/integration/requirements_integration.txt
+python landmark_extractor.py --download-model
+```
+
+Expected checkpoints (adjust paths with CLI flags when needed):
+
+- `outputs/classical_pipeline/svm.joblib` (`random_forest.joblib`, `knn.joblib`, or a custom `--classical-model-path` also work).
+- For DL fusion: `outputs/dl_pipeline/cnn_mobilenetv3.pt`; optional temporal head `outputs/dl_pipeline/cnn_lstm.pt`.
+
+### Run
+
+```bash
+python -m src.integration.run_system --camera-id 0 --timeout-s 4.5
+```
+
+| Flag | Effect |
+|------|--------|
+| `--video clips/demo.mp4` | File input instead of a webcam feed. |
+| `--arm-on-start` | Bypasses the gesture handshake (automated QA / unattended capture rigs). |
+| `--skip-dl` / `--skip-lstm` | Classical-only until CNN checkpoints exist / disable Bi-LSTM latency. |
+| `--fusion-strategy {mean,max,min,weighted_mean,both}` | Late fusion rule (`weighted_mean` default with `--w-classical`, `--w-cnn`, `--w-lstm`). |
+| `--fusion-threshold` | Alert when fused P(trigger) ≥ threshold. |
+| `--reset-face-tracker-on-arm` | Immediately rebuild FaceLandmarker after gestures arm the system. |
+| `--headless` | Suppress GUI windows (prints fused alerts instead). |
+
+**Keys while the window has focus**
+
+- **q** quit · **r** reset gesture sequence + trackers · **x** toggle gesture bypass
+
+### Lightweight tests
+
+```bash
+pytest tests/integration/test_fusion.py -v
+```
+
+### Logistics / report reminders
+
+Own the fused architecture narrative, reproducible run-books, fused-threshold rationale, residual failure cases (hands occluding face, low light, yawning-but-attentive, etc.), and the final edited demo once the team signs off on alert semantics.

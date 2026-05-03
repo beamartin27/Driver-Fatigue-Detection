@@ -1,0 +1,12 @@
+# Member 5 — installs gesture + classical + landmarks + DL in one shot.
+#
+# Prefer (from repo root):
+#   pip install -r src/gesture_activation/requirements_gesture_activation.txt
+#   pip install -r src/classical_pipeline/requirements_classical_pipeline.txt
+#   pip install -r src/dl_pipeline/requirements_dl_pipeline.txt
+#
+# Torch wheel should match your platform / CUDA stack — see pytorch.org.
+
+-r ../gesture_activation/requirements_gesture_activation.txt
+-r ../classical_pipeline/requirements_classical_pipeline.txt
+-r ../dl_pipeline/requirements_dl_pipeline.txt
